@@ -14,6 +14,15 @@ async function api(path, options = {}) {
   if (!response.ok) throw new Error(body?.error || `Request failed (${response.status})`);
   return body;
 }
+document.querySelectorAll('[data-dialog-close]').forEach(button=>button.addEventListener('click',()=>$('#record-dialog').close()));
+document.addEventListener('click',e=>{
+  const options=$('#booking-passenger-options'),search=$('#booking-passenger-search');
+  if(options&&!e.target.closest('.autocomplete-field')){options.hidden=true;search?.setAttribute('aria-expanded','false');}
+});
+document.addEventListener('focusin',e=>{
+  const options=$('#booking-passenger-options'),search=$('#booking-passenger-search');
+  if(options&&!e.target.closest('.autocomplete-field')){options.hidden=true;search?.setAttribute('aria-expanded','false');}
+});
 function notify(message, type='success') { const el=$('#notice'); el.textContent=message;el.className=`notice ${type}`;el.classList.remove('hidden');clearTimeout(notify.timer);notify.timer=setTimeout(()=>el.classList.add('hidden'),5000); }
 function logout(message='') { localStorage.removeItem('airport_token');state.token='';state.user=null;$('#app').classList.add('hidden');$('#login-screen').classList.remove('hidden');if(message)$('#login-error').textContent=message; }
 async function init() {
@@ -49,12 +58,102 @@ async function listing(host,page,force){
   const pk={passengers:'passenger_id',airports:'airport_id',airlines:'airline_id',aircraft:'aircraft_id',gates:'gate_id'}[page];
   const mayEdit=page==='passengers'||page==='aircraft'||page==='gates'?state.user.role!=='Agent':state.user.role==='Admin';
   const draw=()=>{const q=$('#filter').value.toLowerCase();const filtered=rows.filter(row=>JSON.stringify(row).toLowerCase().includes(q));$('#count').textContent=`${filtered.length} records`;$('#list-body').innerHTML=filtered.length?filtered.map(row=>`<tr>${cfg.cols.map(c=>`<td>${c[2]==='badge'?statusBadge(row[c[0]]):c[2]==='money'?money(row[c[0]]):c[2]==='date'?date(row[c[0]]):esc(row[c[0]])}</td>`).join('')}<td>${cfg.action==='Cancel'&&row.booking_status!=='Cancelled'?`<button class="row-action danger-action" data-cancel="${row.booking_id}">Cancel booking</button>`:pk?`${mayEdit?`<button class="row-action" data-edit="${row[pk]}">Edit</button>`:''}${state.user.role==='Admin'?`<button class="row-action danger-action" data-delete="${row[pk]}">Delete</button>`:''}`:'—'}</td></tr>`).join(''):`<tr><td colspan="${cfg.cols.length+1}" class="empty">No matching records.</td></tr>`;};
-  draw();$('#filter').addEventListener('input',draw);host.querySelector('[data-add]')?.addEventListener('click',()=>openForm(cfg));
+  draw();$('#filter').addEventListener('input',draw);host.querySelector('[data-add]')?.addEventListener('click',()=>page==='bookings'?openBookingForm():openForm(cfg));
   host.querySelectorAll('[data-edit]').forEach(btn=>btn.addEventListener('click',()=>openForm(cfg,rows.find(row=>String(row[pk])===btn.dataset.edit))));
   host.querySelectorAll('[data-delete]').forEach(btn=>btn.addEventListener('click',async()=>{if(!confirm('Delete this record? This cannot be undone.'))return;try{await api(`/${cfg.path}/${btn.dataset.delete}`,{method:'DELETE'});notify('Record deleted.');renderPage(true);}catch(err){notify(err.message,'error');}}));
   host.querySelectorAll('[data-cancel]').forEach(btn=>btn.addEventListener('click',async()=>{if(!confirm('Cancel this booking? Its seat will be released and the applicable refund will be recorded.'))return;try{const result=await api(`/bookings/${btn.dataset.cancel}`,{method:'DELETE',body:JSON.stringify({reason:'Cancelled from operations dashboard'})});notify(`Booking cancelled. Refund: ${money(result.refund_amount)}`);renderPage(true);}catch(err){notify(err.message,'error');}}));
 }
 async function flightsPage(host){const rows=await api('/flights');state.cache.flights=rows;host.innerHTML=`${heading('Flights','Search flight schedules and view seat availability.',`<button class="button primary" id="new-flight">＋ Schedule flight</button>`)}<div class="card flight-hero"><div><h2>Flight operations</h2><p>Schedule search uses live MySQL results from the flight service.</p></div><span>✈</span></div><form class="card quick-form" id="flight-search"><div class="field"><label>From airport</label><input name="from" placeholder="e.g. MAA"></div><div class="field"><label>To airport</label><input name="to" placeholder="e.g. DEL"></div><div class="field"><label>Departure date</label><input type="date" name="date"></div><button class="button primary">Search flights</button><button type="reset" class="button secondary">Clear</button></form><div style="height:14px"></div><article class="card table-card" id="flight-results">${flightTable(rows)}<div class="table-footer"><span>${rows.length} flights</span><span>Search results from database</span></div></article>`;$('#flight-search').onsubmit=async e=>{e.preventDefault();const params=new URLSearchParams(new FormData(e.currentTarget));for(const [key,val] of [...params])if(!val)params.delete(key);try{const result=await api(`/flights?${params}`);$('#flight-results').innerHTML=flightTable(result)+`<div class="table-footer"><span>${result.length} flights</span><span>Search results from database</span></div>`;}catch(err){notify(err.message,'error');}};$('#new-flight').onclick=()=>openForm({title:'Schedule flight',path:'flights',fields:[['flight_no','Flight number','text',true],['departure_date','Departure date','date',true],['departure_time','Departure time','time',true],['arrival_date','Arrival date','date',true],['arrival_time','Arrival time','time',true],['airline_id','Airline ID','number',true],['aircraft_id','Aircraft ID','number',true],['source_airport_id','Departure airport ID','number',true],['destination_airport_id','Arrival airport ID','number',true],['gate_id','Gate ID','number']]});}
+async function openBookingForm(){
+  try{
+    const [passengers,flights]=await Promise.all([api('/passengers'),api('/flights')]);
+    const dialog=$('#record-dialog'),form=$('#record-form');
+    $('#dialog-title').textContent='Add booking';
+    const flightOptions=flights.map(f=>`<option value="${Number(f.flight_id)}">${esc(f.flight_no)} · ${esc(f.source)} → ${esc(f.destination)} · ${esc(date(f.departure_date))} ${esc(time(f.departure_time))} · ${esc(f.status)}</option>`).join('');
+    $('#dialog-fields').innerHTML=`<p class="form-hint field wide">Type a passenger name or ID, then choose a match. The internal ID is filled in automatically.</p>
+      <div class="field autocomplete-field"><label for="booking-passenger-search">Passenger *</label><input id="booking-passenger-search" type="search" placeholder="Search passengers by name or ID" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="booking-passenger-options" required><input id="booking-passenger-id" name="passenger_id" type="hidden"><div id="booking-passenger-options" class="autocomplete-options" role="listbox" hidden></div><p id="booking-passenger-help" class="form-hint" role="status">Start typing to find a passenger.</p></div>
+      <div class="field"><label for="booking-flight">Flight *</label><select id="booking-flight" name="flight_id" required><option value="">Select a flight</option>${flightOptions}</select></div>
+      <div class="field"><label for="booking-seat">Available seat *</label><select id="booking-seat" name="seat_no" required disabled><option value="">Select a flight first</option></select></div>
+      <div class="field"><label for="booking-payment">Payment method</label><select id="booking-payment" name="payment_mode"><option>UPI</option><option>Card</option><option>NetBanking</option><option>Cash</option></select></div>
+      <p id="booking-seat-help" class="form-hint field wide" role="status">Select a flight to load its available seats.</p>`;
+    const submit=$('#dialog-submit');
+    submit.textContent='Create booking';
+    dialog.showModal();
+    const passengerSearch=$('#booking-passenger-search'),passengerIdInput=$('#booking-passenger-id');
+    const passengerOptions=$('#booking-passenger-options'),passengerHelp=$('#booking-passenger-help');
+    const flightSelect=$('#booking-flight'),seatSelect=$('#booking-seat'),seatHelp=$('#booking-seat-help');
+    let selectedPassenger=null;
+    const renderPassengerMatches=()=>{
+      const query=passengerSearch.value.trim().toLowerCase();
+      const matches=passengers.filter(p=>`${p.first_name||''} ${p.last_name||''} ${p.passenger_id}`.toLowerCase().includes(query));
+      const visibleMatches=matches.slice(0,30);
+      passengerOptions.innerHTML=visibleMatches.map(p=>{
+        const name=[p.first_name,p.last_name].filter(Boolean).join(' ');
+        return `<button type="button" class="autocomplete-option" role="option" aria-selected="false" data-passenger-id="${Number(p.passenger_id)}"><span>${esc(name||'Unnamed passenger')}</span><small>ID ${Number(p.passenger_id)}</small></button>`;
+      }).join('');
+      passengerOptions.hidden=visibleMatches.length===0;
+      passengerSearch.setAttribute('aria-expanded',String(visibleMatches.length>0));
+      passengerHelp.textContent=matches.length>30?`Showing the first 30 of ${matches.length} matching passengers.`:matches.length?`${matches.length} matching passenger${matches.length===1?'':'s'}.`:'No passengers match that search.';
+    };
+    passengerSearch.setCustomValidity('Choose a passenger from the suggestions.');
+    passengerSearch.addEventListener('focus',()=>{if(!passengerIdInput.value)renderPassengerMatches();});
+    passengerSearch.addEventListener('input',()=>{
+      selectedPassenger=null;passengerIdInput.value='';
+      passengerSearch.setCustomValidity('Choose a passenger from the suggestions.');
+      renderPassengerMatches();
+    });
+    passengerSearch.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){passengerOptions.hidden=true;passengerSearch.setAttribute('aria-expanded','false');}
+      if(e.key==='ArrowDown'){const first=passengerOptions.querySelector('.autocomplete-option');if(first){e.preventDefault();first.focus();}}
+      if(e.key==='Enter'&&!passengerOptions.hidden){const first=passengerOptions.querySelector('.autocomplete-option');if(first){e.preventDefault();first.click();}}
+    });
+    passengerOptions.addEventListener('click',e=>{
+      const option=e.target.closest('[data-passenger-id]');if(!option)return;
+      selectedPassenger=passengers.find(p=>String(p.passenger_id)===option.dataset.passengerId);
+      if(!selectedPassenger)return;
+      const name=[selectedPassenger.first_name,selectedPassenger.last_name].filter(Boolean).join(' ');
+      passengerSearch.value=`${name||'Unnamed passenger'} · ID ${selectedPassenger.passenger_id}`;
+      passengerIdInput.value=String(selectedPassenger.passenger_id);
+      passengerSearch.setCustomValidity('');
+      passengerOptions.hidden=true;passengerSearch.setAttribute('aria-expanded','false');
+      passengerHelp.textContent='Passenger selected.';passengerSearch.focus();
+    });
+    passengerSearch.focus();
+    flightSelect.addEventListener('change',async()=>{
+      const flightId=flightSelect.value;
+      seatSelect.disabled=true;
+      seatSelect.innerHTML='<option value="">Loading seats…</option>';
+      seatHelp.textContent='Loading available seats…';
+      if(!flightId){seatSelect.innerHTML='<option value="">Select a flight first</option>';seatHelp.textContent='Select a flight to load its available seats.';return;}
+      try{
+        const seats=await api(`/flights/${encodeURIComponent(flightId)}/seats`);
+        if(flightSelect.value!==flightId)return;
+        const available=seats.filter(s=>s.is_active&&!s.is_taken);
+        seatSelect.innerHTML=available.length?'<option value="">Select a seat</option>'+available.map(s=>`<option value="${esc(s.seat_no)}">${esc(s.seat_no)} · ${esc(s.class)}</option>`).join(''):'<option value="">No seats available</option>';
+        seatSelect.disabled=available.length===0;
+        seatHelp.textContent=available.length?`${available.length} seat${available.length===1?'':'s'} available.`:'This flight has no available seats.';
+      }catch(err){
+        if(flightSelect.value!==flightId)return;
+        seatSelect.innerHTML='<option value="">Could not load seats</option>';
+        seatHelp.textContent=err.message;
+      }
+    });
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      if(!form.reportValidity())return;
+      const data=Object.fromEntries(new FormData(form));
+      if(!selectedPassenger||String(selectedPassenger.passenger_id)!==passengerIdInput.value){passengerSearch.setCustomValidity('Choose a passenger from the suggestions.');passengerSearch.reportValidity();return;}
+      submit.disabled=true;submit.textContent='Creating…';seatHelp.textContent='';
+      try{
+        const result=await api('/bookings',{method:'POST',body:JSON.stringify({...data,passenger_id:Number(data.passenger_id),flight_id:Number(data.flight_id)})});
+        dialog.close();notify(`Booking confirmed · PNR ${result.pnr} · Ticket ${result.ticket_no}`);renderPage(true);
+      }catch(err){seatHelp.textContent=err.message;}
+      finally{submit.disabled=false;submit.textContent='Create booking';}
+    };
+    if(!passengers.length)seatHelp.textContent='Add a passenger before creating a booking.';
+    if(!flights.length)seatHelp.textContent='There are no flights available to book.';
+  }catch(err){notify(`Could not load booking choices: ${err.message}`,'error');}
+}
 function openForm(cfg,existing=null){
   const dialog=$('#record-dialog'),form=$('#record-form');
   $('#dialog-title').textContent=`${existing?'Edit':'Add'} ${cfg.title.toLowerCase().replace(/s$/,'')}`;
