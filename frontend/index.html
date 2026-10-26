@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1e35">
+  <title>AirOps | Airport management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <section id="login-screen" class="login-screen">
+    <div class="login-art"><div class="brand brand-light"><span class="brand-mark">✦</span> AirOps</div><div class="login-copy"><span class="eyebrow">AIRPORT OPERATIONS PLATFORM</span><h1>Every journey,<br>in good hands.</h1><p>One clear view of flights, passengers and the people who make every departure possible.</p><div class="login-skyline">✈ <span>✦</span> ──────────────────── ◉</div></div><small>FLIGHT & PASSENGER MANAGEMENT</small></div>
+    <div class="login-panel"><form id="login-form" class="login-card"><span class="eyebrow">WELCOME BACK</span><h2>Sign in to AirOps</h2><p class="muted">Use your airport staff account to continue.</p><label>Username<input name="username" autocomplete="username" required value="admin"></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="button primary full" type="submit">Sign in <span>→</span></button><div id="login-error" class="form-error" role="alert"></div><div class="login-note"><span class="lock">◈</span> Secure access for authorized airport personnel</div></form></div>
+  </section>
+  <div id="app" class="app-shell hidden">
+    <aside class="sidebar">
+      <a class="brand" href="#dashboard"><span class="brand-mark">✦</span> AirOps</a><div class="workspace-label">WORKSPACE</div>
+      <nav id="nav"><button class="nav-item active" data-page="dashboard"><span>▦</span> Overview</button><button class="nav-item" data-page="flights"><span>✈</span> Flights</button><button class="nav-item" data-page="passengers"><span>♙</span> Passengers</button><button class="nav-item" data-page="bookings"><span>▣</span> Bookings</button><button class="nav-item" data-page="baggage"><span>▤</span> Baggage</button><button class="nav-item" data-page="payments"><span>◉</span> Payments</button><div class="nav-divider"></div><div class="workspace-label">DIRECTORY</div><button class="nav-item" data-page="airports"><span>⌖</span> Airports</button><button class="nav-item" data-page="airlines"><span>◈</span> Airlines</button><button class="nav-item" data-page="aircraft"><span>✈</span> Aircraft</button><button class="nav-item" data-page="gates"><span>▱</span> Gates</button><button class="nav-item admin-only" data-page="audit"><span>≋</span> Audit log</button></nav>
+      <div class="sidebar-bottom"><div class="help-card"><span class="help-icon">✦</span><b>Need a hand?</b><p>Open the API guide for workflow details.</p><span class="small-caps">API available at /api</span></div><div class="profile"><div class="avatar" id="user-avatar">A</div><div class="profile-text"><b id="user-name">Airport Admin</b><small id="user-role">Administrator</small></div><button id="logout" class="icon-button" title="Sign out">↗</button></div></div>
+    </aside>
+    <main class="main-area"><header class="topbar"><button class="icon-button menu-toggle" id="menu-toggle" title="Open navigation">☰</button><div class="breadcrumbs"><span>Workspace</span><b>/</b><strong id="page-crumb">Overview</strong></div><div class="top-actions"><span class="live-pill"><i></i> STAFF CONSOLE</span><span id="today-label" class="today-label"></span><button class="icon-button" id="refresh" title="Refresh data">↻</button></div></header>
+      <div class="page-wrap"><div id="notice" class="notice hidden" role="status"></div><section id="page-content"></section></div>
+    </main>
+  </div>
+  <dialog id="record-dialog"><form method="dialog" id="record-form"><div class="dialog-head"><div><span class="eyebrow">AIRPORT OPERATIONS</span><h2 id="dialog-title">Add record</h2></div><button class="icon-button" value="cancel" aria-label="Close">×</button></div><div id="dialog-fields" class="form-grid"></div><div class="dialog-actions"><button class="button secondary" value="cancel">Cancel</button><button class="button primary" id="dialog-submit" value="default">Save record</button></div></form></dialog>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,214 @@
+AIRPORT FLIGHT AND PASSENGER MANAGEMENT SYSTEM - RELATIONAL SCHEMA (v2)
+(PK = primary key, FK = foreign key, UQ = unique, NN = not null)
+
+==================== SECURITY / USERS ====================
+
+USER_ACCOUNT(
+    user_id PK,
+    username UNIQUE NN,
+    password_hash NN,
+    role ENUM('Admin','Staff','Agent') NN,
+    email UNIQUE,
+    is_active DEFAULT TRUE,
+    created_at DEFAULT CURRENT_TIMESTAMP,
+    last_login
+)
+
+AUDIT_LOG(
+    log_id PK,
+    user_id FK -> USER_ACCOUNT.user_id,
+    action,
+    table_name,
+    record_id,
+    old_value,
+    new_value,
+    log_time DEFAULT CURRENT_TIMESTAMP
+)
+
+==================== MASTER DATA ====================
+
+AIRLINE(
+    airline_id PK,
+    airline_name NN,
+    airline_code UNIQUE NN,
+    country,
+    contact_no,
+    email,
+    is_active DEFAULT TRUE
+)
+
+AIRPORT(
+    airport_id PK,
+    airport_name NN,
+    city,
+    country,
+    airport_code UNIQUE NN,
+    timezone
+)
+
+AIRCRAFT(
+    aircraft_id PK,
+    aircraft_code UNIQUE NN,
+    model,
+    manufacturer,
+    year_of_manufacture,
+    capacity NN CHECK (capacity > 0),
+    status ENUM('Active','Maintenance','Retired'),
+    airline_id FK -> AIRLINE.airline_id
+)
+
+SEAT(
+    seat_id PK,
+    aircraft_id FK -> AIRCRAFT.aircraft_id,
+    seat_no NN,
+    class ENUM('Economy','Business','First') NN,
+    seat_type ENUM('Window','Aisle','Middle'),
+    is_active DEFAULT TRUE,
+    UNIQUE (aircraft_id, seat_no)
+)
+
+GATE(
+    gate_id PK,
+    gate_no NN,
+    terminal,
+    status ENUM('Available','Occupied','Closed'),
+    airport_id FK -> AIRPORT.airport_id,
+    UNIQUE (airport_id, terminal, gate_no)
+)
+
+CREW(
+    crew_id PK,
+    first_name NN,
+    last_name,
+    role ENUM('Pilot','Co-Pilot','Attendant') NN,
+    license_no UNIQUE,
+    phone_no,
+    airline_id FK -> AIRLINE.airline_id
+)
+
+PASSENGER(
+    passenger_id PK,
+    first_name NN,
+    last_name,
+    dob,
+    gender ENUM('Male','Female','Other'),
+    nationality,
+    passport_no UNIQUE NN,
+    passport_expiry,
+    phone_no,
+    email,
+    address,
+    created_at DEFAULT CURRENT_TIMESTAMP
+)
+
+==================== FLIGHT OPERATIONS ====================
+
+FLIGHT(
+    flight_id PK,
+    flight_no NN,
+    departure_date NN,
+    departure_time NN,
+    arrival_date NN,
+    arrival_time NN,
+    actual_departure,
+    actual_arrival,
+    delay_minutes DEFAULT 0,
+    status ENUM('Scheduled','Boarding','Departed','Arrived','Delayed','Cancelled'),
+    airline_id FK -> AIRLINE.airline_id,
+    aircraft_id FK -> AIRCRAFT.aircraft_id,
+    source_airport_id FK -> AIRPORT.airport_id,
+    destination_airport_id FK -> AIRPORT.airport_id,
+    gate_id FK -> GATE.gate_id,
+    UNIQUE (flight_no, departure_date),
+    -- source <> destination is enforced by trigger trg_flight_bi / trg_flight_bu
+    -- (MySQL error 3823: a CHECK cannot use columns that have FK referential actions)
+    CHECK (arrival datetime > departure datetime)
+)
+
+FLIGHT_FARE(
+    fare_id PK,
+    flight_id FK -> FLIGHT.flight_id,
+    class ENUM('Economy','Business','First') NN,
+    base_price NN CHECK (base_price >= 0),
+    seats_available,
+    UNIQUE (flight_id, class)
+)
+
+FLIGHT_CREW(                       -- M:N between FLIGHT and CREW
+    flight_id FK -> FLIGHT.flight_id,
+    crew_id FK -> CREW.crew_id,
+    PRIMARY KEY (flight_id, crew_id)
+)
+
+==================== BOOKING / TICKETING ====================
+
+BOOKING(
+    booking_id PK,
+    booking_reference UNIQUE NN,   -- PNR
+    booking_date NN,
+    booking_status ENUM('Confirmed','Pending','Cancelled'),
+    total_amount CHECK (total_amount >= 0),
+    passenger_id FK -> PASSENGER.passenger_id,
+    flight_id FK -> FLIGHT.flight_id,
+    seat_id FK -> SEAT.seat_id,    -- class is derived from SEAT.class; set NULL on cancel
+    booked_by FK -> USER_ACCOUNT.user_id,
+    UNIQUE (flight_id, seat_id)
+)
+
+TICKET(
+    ticket_id PK,
+    ticket_no UNIQUE NN,
+    issue_date NN,
+    fare_amount NN CHECK (fare_amount >= 0),
+    status ENUM('Issued','Cancelled','Refunded'),
+    booking_id FK -> BOOKING.booking_id UNIQUE
+)
+
+PAYMENT(                           -- 1:N so retries / split payments are possible
+    payment_id PK,
+    payment_date NN,
+    amount NN CHECK (amount > 0),
+    currency DEFAULT 'INR',
+    payment_mode ENUM('Card','UPI','NetBanking','Cash'),
+    transaction_id UNIQUE,
+    status ENUM('Success','Failed','Pending','Refunded'),
+    ticket_id FK -> TICKET.ticket_id
+)
+
+BAGGAGE(
+    baggage_id PK,
+    baggage_tag UNIQUE NN,
+    baggage_type ENUM('Checked','Cabin'),
+    weight CHECK (weight > 0),
+    dimensions,
+    fee DEFAULT 0,
+    status ENUM('Checked-In','Loaded','Arrived','Lost'),
+    booking_id FK -> BOOKING.booking_id
+)
+
+CHECK_IN(                          -- boarding gate = FLIGHT.gate_id
+    checkin_id PK,
+    ticket_id FK -> TICKET.ticket_id UNIQUE,
+    check_in_time,
+    boarding_time,
+    boarding_status ENUM('Checked-In','Boarded','No-Show')
+)
+
+CANCELLATION(
+    cancel_id PK,
+    booking_id FK -> BOOKING.booking_id UNIQUE,
+    cancel_date NN,
+    reason,
+    refund_amount DEFAULT 0,
+    processed_by FK -> USER_ACCOUNT.user_id
+)
+
+==================== IMPLEMENTED TRIGGERS / PROCEDURES ====================
+21 triggers on FLIGHT, BOOKING, TICKET, PAYMENT, BAGGAGE, CHECK_IN, PASSENGER
+(validation, seat/capacity control, cancellation + refund logic, audit logging).
+Helper procedures: sp_audit, sp_validate_flight.
+Procedures: sp_book_ticket, sp_cancel_booking, sp_get_flight_manifest, sp_check_in,
+            sp_board_passenger, sp_search_flights, sp_seat_map, sp_dashboard_stats
+See database/triggers.sql and database/procedures.sql, and Report_Sections.md.
+Indexes: idx_flight_date, idx_flight_route, idx_passenger_name, idx_booking_status,
+         idx_audit_time (+ automatic indexes on all foreign keys)
